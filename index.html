@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Boss 的 AI 飲食秘書 (對話修正版)</title>
+    <style>
+        :root { --primary-color: #4CAF50; --bg-color: #f9f9f9; }
+        body { font-family: -apple-system, sans-serif; background-color: var(--bg-color); margin: 0; padding: 15px; display: flex; justify-content: center; }
+        .app-container { max-width: 400px; width: 100%; background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        h2 { text-align: center; color: #333; margin-top: 0; }
+        
+        /* 拍照區 */
+        .upload-section { border: 2px dashed #ccc; border-radius: 10px; padding: 20px; text-align: center; cursor: pointer; position: relative; margin-bottom: 15px; }
+        .upload-section:hover { border-color: var(--primary-color); }
+        #previewImage { max-width: 100%; max-height: 200px; border-radius: 10px; display: none; margin-top: 10px; }
+        #imageInput { position: absolute; width: 100%; height: 100%; opacity: 0; top: 0; left: 0; cursor: pointer; }
+
+        /* 按鈕與輸入框 */
+        button { width: 100%; padding: 12px; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; transition: background 0.2s; margin-bottom: 10px; }
+        .btn-analyze { background-color: #2196F3; color: white; }
+        .btn-analyze:hover { background-color: #1976D2; }
+        .btn-upload { background-color: var(--primary-color); color: white; margin-top: 15px; font-size: 18px;}
+        .btn-upload:hover { background-color: #45a049; }
+        .btn-upload:disabled { background-color: #ccc; cursor: not-allowed; }
+
+        /* 分析與修正區 */
+        #status { text-align: center; color: #666; font-size: 14px; min-height: 20px; margin-bottom: 10px; }
+        .correction-panel { background: #e3f2fd; padding: 15px; border-radius: 8px; margin-bottom: 15px; display: none; }
+        .correction-panel label { font-weight: bold; color: #1565c0; display: block; margin-bottom: 5px; }
+        #correctionInput { width: calc(100% - 20px); padding: 10px; border: 1px solid #90caf9; border-radius: 5px; font-size: 14px; }
+
+        /* 自動填表區 */
+        .data-fields label { display: block; margin-top: 10px; font-weight: bold; color: #555; font-size: 14px; }
+        .data-fields input { width: calc(100% - 22px); padding: 10px; margin-top: 5px; border: 1px solid #ddd; border-radius: 5px; font-size: 16px; background-color: #fff; }
+        .data-fields input[readonly] { background-color: #eee; color: #777; }
+        .inline-group { display: flex; gap: 10px; }
+        .inline-group div { flex: 1; }
+
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <h2>🥗 Boss 行動飲食秘書</h2>
+        
+        <div class="upload-section" id="dropZone">
+            <span id="uploadText">📸 點擊拍照或選取圖片</span>
+            <img id="previewImage" alt="預覽圖">
+            <input type="file" id="imageInput" accept="image/jpeg, image/png">
+        </div>
+        <button class="btn-analyze" id="analyzeBtn" onclick="analyzeImage()">開始辨識</button>
+        <div id="status"></div>
+
+        <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+
+        <div class="correction-panel" id="correctionPanel">
+            <label for="correctionInput">💡 AI 說錯了嗎？直接告訴它：</label>
+            <input type="text" id="correctionInput" placeholder="例如：飯只有一碗，是叻沙，我不喝湯">
+            <button class="btn-analyze" style="background-color: #ff9800; margin-top: 10px; font-size: 14px;" onclick="reAnalyze()">重新推算</button>
+        </div>
+
+        <div class="data-fields">
+            <label>餐點內容</label>
+            <input type="text" id="content" placeholder="等待 AI 分析...">
+
+            <div class="inline-group">
+                <div>
+                    <label>熱量 (kcal)</label>
+                    <input type="number" id="calories" placeholder="0">
+                </div>
+                <div>
+                    <label>蛋白質 (g)</label>
+                    <input type="number" id="protein" placeholder="0">
+                </div>
+            </div>
+            
+            <div class="inline-group">
+                <div>
+                    <label>脂肪 (g)</label>
+                    <input type="number" id="fat" placeholder="0">
+                </div>
+                <div>
+                    <label>碳水 (g)</label>
+                    <input type="number" id="carbs" placeholder="0">
+                </div>
+                <div>
+                    <label>重量 (g)</label>
+                    <input type="number" id="weight" placeholder="0">
+                </div>
+            </div>
+        </div>
+
+        <button class="btn-upload" id="uploadBtn" onclick="uploadData()" disabled>✅ 確認入庫</button>
+    </div>
+
+    <script>
+        // GCP Cloud Run 網址
+        const API_URL = "https://meal-logger-973733682193.asia-east1.run.app";
+        let currentBase64 = ""; // 儲存當前圖片，供重新推算使用
+
+        // --- 處理圖片預覽 ---
+        const imageInput = document.getElementById('imageInput');
+        const previewImage = document.getElementById('previewImage');
+        const uploadText = document.getElementById('uploadText');
+
+        imageInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    previewImage.src = event.target.result;
+                    previewImage.style.display = 'block';
+                    uploadText.style.display = 'none';
+                    currentBase64 = event.target.result.split(",")[1]; // 儲存 Base64 數據
+                }
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // --- 功能 A: 初步分析圖片 ---
+        async function analyzeImage() {
+            if (!currentBase64) return alert("Boss，請先選圖片！");
+            updateStatus("正在辨識食物...");
+            toggleInputs(false); // 鎖定輸入框與按鈕
+
+            // 發送至 Cloud Run 的 /analyze 路由
+            callApi(API_URL + "/analyze", { image: currentBase64 });
+        }
+
+        // --- 功能 B: 對話修正後重新推算 ---
+        async function reAnalyze() {
+            const correction = document.getElementById("correctionInput").value;
+            if (!correction) return alert("Boss，請輸入修正指令！");
+            updateStatus("AI 重新推算中...");
+            toggleInputs(false);
+
+            // 發送至 Cloud Run 的 /analyze 路由，並附帶修正指令
+            callApi(API_URL + "/analyze", { image: currentBase64, correction: correction });
+        }
+
+        // --- 核心：呼叫 API 並自動填表 ---
+        async function callApi(url, payload) {
+            try {
+                const res = await fetch(url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!res.ok) throw new Error(await res.text());
+
+                const aiResult = await res.json();
+                fillForm(aiResult); // 💡 【最關鍵的一步：自動填表】
+                updateStatus("辨識完成，請審核格子內的數據");
+                document.getElementById("correctionPanel").style.display = 'block'; // 顯示修正面板
+
+            } catch (err) {
+                updateStatus("❌ 發生錯誤: " + err.message);
+                console.error(err);
+            } finally {
+                toggleInputs(true); // 解鎖輸入框與按鈕
+            }
+        }
+
+        // --- 核心：解析 JSON 並自動填入 Input 格子 ---
+        function fillForm(data) {
+            // 對齊 Python 後端回傳的 JSON Key
+            document.getElementById("content").value = data.content || "";
+            document.getElementById("calories").value = data.calories || 0;
+            document.getElementById("protein").value = data.protein || 0;
+            document.getElementById("fat").value = data.fat || 0;
+            document.getElementById("carbs").value = data.carbs || 0;
+            document.getElementById("weight").value = data.weight || 0;
+            document.getElementById("uploadBtn").disabled = false; // 啟用上傳按鈕
+        }
+
+        // --- 功能 C: 確認入庫 (寫入 Google Sheet) ---
+        async function uploadData() {
+            updateStatus("正在寫入試算表...");
+            toggleInputs(false);
+
+            const payload = {
+                date: new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' }), // 自動抓取日期
+                category: "AI辨識", // 自動填入餐別
+                content: document.getElementById("content").value,
+                calories: document.getElementById("calories").value,
+                protein: document.getElementById("protein").value,
+                fat: document.getElementById("fat").value,
+                carbs: document.getElementById("carbs").value,
+                weight: document.getElementById("weight").value
+            };
+
+            try {
+                const res = await fetch(API_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await res.text();
+                if (res.ok) {
+                    alert("✅ 成功！數據已射進 Google Sheet 第 6 列！");
+                    resetForm();
+                } else {
+                    throw new Error(result);
+                }
+            } catch (err) {
+                updateStatus("❌ 上傳失敗: " + err.message);
+            } finally {
+                toggleInputs(true);
+            }
+        }
+
+        // --- 輔助功能 ---
+        function updateStatus(msg) { document.getElementById("status").innerText = msg; }
+        function toggleInputs(enable) {
+            document.getElementById("analyzeBtn").disabled = !enable;
+            document.getElementById("uploadBtn").disabled = !enable;
+            const inputs = document.querySelectorAll('.data-fields input');
+            inputs.forEach(input => input.disabled = !enable);
+        }
+        function resetForm() {
+            document.getElementById("dropZone").style.display = 'block';
+            document.getElementById("previewImage").style.display = 'none';
+            document.getElementById("uploadText").style.display = 'block';
+            document.getElementById("correctionPanel").style.display = 'none';
+            document.getElementById("correctionInput").value = '';
+            document.getElementById("uploadBtn").disabled = true;
+            updateStatus("");
+            const inputs = document.querySelectorAll('.data-fields input');
+            inputs.forEach(input => input.value = '');
+        }
+    </script>
+</body>
+</html>
