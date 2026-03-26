@@ -6,17 +6,15 @@
     <title>Boss 的 AI 飲食秘書</title>
     <style>
         :root { --primary: #4CAF50; --secondary: #2196F3; --bg: #f5f5f7; --text: #1d1d1f; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); margin: 0; padding: 15px; display: flex; flex-direction: column; align-items: center; min-height: 100vh; color: var(--text); }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); margin: 0; padding: 15px; display: flex; flex-direction: column; align-items: center; min-height: 100vh; color: var(--text); }
         .card { background: white; width: 100%; max-width: 400px; padding: 20px; border-radius: 20px; box-shadow: 0 8px 24px rgba(0,0,0,0.05); margin-bottom: 20px; box-sizing: border-box; }
         h2 { margin-top: 0; text-align: center; font-size: 22px; font-weight: 700; }
         
-        /* 圖片上傳區 */
         .upload-area { border: 2px dashed #d2d2d7; border-radius: 16px; padding: 30px; text-align: center; cursor: pointer; position: relative; background: #fafafa; transition: 0.3s; }
         .upload-area:active { background: #f2f2f7; transform: scale(0.98); }
         #preview { width: 100%; border-radius: 12px; display: none; margin-top: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
         input[type="file"] { position: absolute; width: 100%; height: 100%; opacity: 0; top: 0; left: 0; cursor: pointer; }
         
-        /* 按鈕樣式 */
         button { width: 100%; padding: 16px; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 10px; transition: 0.2s; -webkit-tap-highlight-color: transparent; }
         .btn-blue { background: var(--secondary); color: white; }
         .btn-green { background: var(--primary); color: white; }
@@ -24,17 +22,14 @@
         button:active { opacity: 0.8; transform: scale(0.98); }
         button:disabled { background: #d2d2d7; cursor: not-allowed; transform: none; }
 
-        /* 狀態文字 */
         .status { margin: 15px 0; font-size: 14px; color: #86868b; text-align: center; font-weight: 500; min-height: 1.5em; }
         
-        /* 數據格 */
         .grid { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
         .grid div { flex: 1 1 45%; }
         label { font-size: 12px; color: #86868b; display: block; margin-bottom: 4px; font-weight: 600; padding-left: 4px; }
         input[type="text"], input[type="number"] { width: 100%; padding: 12px; border: 1px solid #d2d2d7; border-radius: 10px; box-sizing: border-box; font-size: 16px; background: #fff; -webkit-appearance: none; }
         input:focus { border-color: var(--secondary); outline: none; }
 
-        /* 修正區域 */
         #correctionBox { display: none; margin-top: 15px; padding: 15px; background: #f2f2f7; border-radius: 14px; border: 1px solid #e5e5ea; }
         #correctionInput { margin-bottom: 8px; }
     </style>
@@ -47,12 +42,12 @@
             <img id="preview" alt="食物預覽">
             <input type="file" id="imageInput" accept="image/*">
         </div>
-        <button class="btn-blue" id="analyzeBtn" onclick="analyze()">開始辨識這餐</button>
-        <div class="status" id="status">準備就緒，請上傳照片</div>
+        <button class="btn-blue" id="analyzeBtn" onclick="analyze()">開始 AI 辨識</button>
+        <div class="status" id="status">準備就緒，請拍一張食物照</div>
         
         <div id="correctionBox">
-            <label>辨識不夠準？請輸入修正指令：</label>
-            <input type="text" id="correctionInput" placeholder="例如：飯少一半、這是大碗的">
+            <label>AI 沒看準？請輸入修正指令：</label>
+            <input type="text" id="correctionInput" placeholder="例如：飯少一半、這碗湯沒喝">
             <button class="btn-orange" onclick="reAnalyze()">重新推算數據</button>
         </div>
     </div>
@@ -72,10 +67,10 @@
 
     <script>
         // 🚀 Boss 的 Cloud Run 專屬網址
-        const API_URL = "[https://meal-logger-973733682193.asia-east1.run.app](https://meal-logger-973733682193.asia-east1.run.app)";
+        const API_URL = "https://meal-logger-973733682193.asia-east1.run.app";
         let base64Img = "";
 
-        // 圖片讀取與預覽
+        // 圖片讀取與預覽邏輯
         document.getElementById('imageInput').onchange = e => {
             const file = e.target.files[0];
             if (!file) return;
@@ -86,27 +81,27 @@
                 img.style.display = 'block';
                 document.getElementById('label').style.display = 'none';
                 base64Img = reader.result.split(',')[1];
-                setStatus("圖片讀取成功，請點擊辨識");
+                setStatus("圖片已就緒，請按辨識");
             };
             reader.readAsDataURL(file);
         };
 
-        // 一般辨識
+        // 按下辨識按鈕
         async function analyze() {
             if (!base64Img) return setStatus("Boss, 請先拍張照喔！");
             callCloudRun("/analyze", { image: base64Img });
         }
 
-        // 帶修正指令的辨識
+        // 按下修正按鈕
         async function reAnalyze() {
             const correction = document.getElementById('correctionInput').value;
             if (!correction) return setStatus("請輸入修正內容");
             callCloudRun("/analyze", { image: base64Img, correction: correction });
         }
 
-        // 核心調用邏輯
+        // 核心 API 通訊與 JSON 捕捉
         async function callCloudRun(path, body) {
-            setStatus("AI 正在光速辨識中...");
+            setStatus("AI 正在思考這頓飯有什麼...");
             document.getElementById('analyzeBtn').disabled = true;
             try {
                 const res = await fetch(API_URL + path, {
@@ -115,17 +110,17 @@
                     body: JSON.stringify(body)
                 });
                 
-                if (!res.ok) throw new Error("後端連線失敗，請確認 GCP 部署");
+                if (!res.ok) throw new Error("後端連線失敗，請檢查 GCP");
 
                 const text = await res.text();
-                console.log("後端原始數據:", text);
+                console.log("原始回傳數據:", text);
 
-                // 💡 強力過濾器：只抓取大括號 {} 之間的 JSON，防止 AI 多廢話導致解析錯誤
+                // 💡 強力過濾器：只抓取大括號 {} 之間的內容，防止 AI 噴 Markdown 標籤
                 const match = text.match(/\{[\s\S]*\}/);
                 if (!match) throw new Error("回傳格式異常，請重試");
 
                 const data = JSON.parse(match[0]);
-                updateUI(data);
+                updateFields(data);
                 setStatus("辨識成功！請核對數據");
                 document.getElementById('correctionBox').style.display = 'block';
             } catch (e) {
@@ -136,9 +131,9 @@
             }
         }
 
-        // 數據填入格子
-        function updateUI(d) {
-            document.getElementById('content').value = d.content || d.food || "分析完畢";
+        // 填入表格
+        function updateFields(d) {
+            document.getElementById('content').value = d.content || d.food || "已分析";
             document.getElementById('calories').value = d.calories || 0;
             document.getElementById('protein').value = d.protein || 0;
             document.getElementById('fat').value = d.fat || 0;
@@ -149,12 +144,12 @@
 
         // 寫入 Google Sheet
         async function upload() {
-            setStatus("正在同步至 Google 試算表...");
+            setStatus("正在寫入 Google Sheet...");
             document.getElementById('uploadBtn').disabled = true;
             
             const payload = {
-                // 自動生成當前日期 (台灣格式)
                 date: new Date().toLocaleDateString('zh-TW', {year:'numeric', month:'2-digit', day:'2-digit'}),
+                category: "AI辨識",
                 content: document.getElementById('content').value,
                 calories: document.getElementById('calories').value,
                 protein: document.getElementById('protein').value,
@@ -170,16 +165,14 @@
                     body: JSON.stringify(payload)
                 });
                 if (res.ok) {
-                    setStatus("✅ 數據已成功存入飲食紀錄表！");
-                    // 注意：在 iPhone 的 Web App 模式下 alert 可能不會跳出
-                    // 建議直接觀察 status 區塊的綠色勾勾
+                    setStatus("✅ 數據已成功存入飲食紀錄！");
                 } else {
                     const errorMsg = await res.text();
                     setStatus("❌ 寫入失敗: " + errorMsg);
                     document.getElementById('uploadBtn').disabled = false;
                 }
             } catch (e) {
-                setStatus("❌ 網路連線異常，請稍後再試");
+                setStatus("❌ 連線異常，請稍後再試");
                 document.getElementById('uploadBtn').disabled = false;
             }
         }
