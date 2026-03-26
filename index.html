@@ -2,7 +2,9 @@
 const API_URL = "https://meal-logger-973733682193.asia-east1.run.app";
 let currentBase64 = "";
 
-// --- 圖片 ---
+// =====================
+// IMAGE UPLOAD
+// =====================
 const imageInput = document.getElementById('imageInput');
 const previewImage = document.getElementById('previewImage');
 const uploadText = document.getElementById('uploadText');
@@ -21,16 +23,21 @@ imageInput.addEventListener('change', function(e) {
     reader.readAsDataURL(file);
 });
 
-// --- 分析 ---
+// =====================
+// ANALYZE
+// =====================
 async function analyzeImage() {
     if (!currentBase64) return alert("請先選圖片");
+
     updateStatus("AI 分析中...");
     toggleInputs(false);
 
     callApi({ image: currentBase64 });
 }
 
-// --- 修正重算 ---
+// =====================
+// RE-ANALYZE
+// =====================
 async function reAnalyze() {
     const correction = document.getElementById("correctionInput").value;
     if (!correction) return alert("請輸入修正");
@@ -44,7 +51,9 @@ async function reAnalyze() {
     });
 }
 
-// --- API ---
+// =====================
+// API CALL
+// =====================
 async function callApi(payload) {
     try {
         const res = await fetch(API_URL + "/analyze", {
@@ -60,14 +69,9 @@ async function callApi(payload) {
         try {
             data = JSON.parse(text);
         } catch (e) {
-            console.warn("JSON parse failed, trying fallback...");
-
             const match = text.match(/\{[\s\S]*\}/);
-            if (match) {
-                data = JSON.parse(match[0]);
-            } else {
-                throw new Error("後端回傳不是 JSON");
-            }
+            if (!match) throw new Error("後端回傳不是 JSON");
+            data = JSON.parse(match[0]);
         }
 
         fillForm(data);
@@ -82,7 +86,9 @@ async function callApi(payload) {
     }
 }
 
-// --- 填表 ---
+// =====================
+// FILL FORM
+// =====================
 function fillForm(data) {
     document.getElementById("content").value = data.content || "";
     document.getElementById("calories").value = data.calories ?? 0;
@@ -94,7 +100,9 @@ function fillForm(data) {
     document.getElementById("uploadBtn").disabled = false;
 }
 
-// --- 上傳 Sheet ---
+// =====================
+// UPLOAD TO SHEET
+// =====================
 async function uploadData() {
     updateStatus("寫入中...");
     toggleInputs(false);
@@ -102,12 +110,12 @@ async function uploadData() {
     const payload = {
         date: new Date().toLocaleDateString("zh-TW"),
         category: "AI辨識",
-        content: content.value,
-        calories: calories.value,
-        protein: protein.value,
-        fat: fat.value,
-        carbs: carbs.value,
-        weight: weight.value
+        content: document.getElementById("content").value,
+        calories: document.getElementById("calories").value,
+        protein: document.getElementById("protein").value,
+        fat: document.getElementById("fat").value,
+        carbs: document.getElementById("carbs").value,
+        weight: document.getElementById("weight").value
     };
 
     try {
@@ -118,7 +126,6 @@ async function uploadData() {
         });
 
         const text = await res.text();
-
         if (!res.ok) throw new Error(text);
 
         alert("成功寫入 Google Sheet");
@@ -131,8 +138,12 @@ async function uploadData() {
     }
 }
 
-// --- 工具 ---
-function updateStatus(msg){ document.getElementById("status").innerText = msg; }
+// =====================
+// UI HELPERS
+// =====================
+function updateStatus(msg){
+    document.getElementById("status").innerText = msg;
+}
 
 function toggleInputs(enable){
     document.getElementById("analyzeBtn").disabled = !enable;
@@ -142,6 +153,14 @@ function toggleInputs(enable){
 function resetForm(){
     document.getElementById("correctionPanel").style.display = "none";
     document.getElementById("correctionInput").value = "";
-    document.querySelectorAll("input").forEach(i => i.value = "");
+
+    document.getElementById("content").value = "";
+    document.getElementById("calories").value = "";
+    document.getElementById("protein").value = "";
+    document.getElementById("fat").value = "";
+    document.getElementById("carbs").value = "";
+    document.getElementById("weight").value = "";
+
+    document.getElementById("uploadBtn").disabled = true;
 }
 </script>
